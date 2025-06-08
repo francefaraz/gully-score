@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gully_score/screens/scoring_screen_with_players.dart';
 import '../models/match_data.dart';
 import 'scoring_screen.dart';
 
@@ -20,6 +21,12 @@ class _MatchSetupScreenState extends State<MatchSetupScreen> {
 
   bool wideGivesRun = true;
   bool noBallGivesRun = true;
+  bool trackPlayers = false;
+  bool enterNamesNow = true;
+  final teamAPlayersController = TextEditingController();
+  final teamBPlayersController = TextEditingController();
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +66,37 @@ class _MatchSetupScreenState extends State<MatchSetupScreen> {
             _buildSwitch("No Ball Run Allowed?", noBallGivesRun, (val) {
               setState(() => noBallGivesRun = val);
             }),
+            const SizedBox(height: 24),
+            _buildSwitch("Track Player Names?", trackPlayers, (val) {
+              setState(() => trackPlayers = val);
+            }),
+            if (trackPlayers)
+              _buildSection("How would you like to enter names?", [
+                _choiceToggle(['Now', 'During Match'], enterNamesNow ? 'Now' : 'During Match', (val) {
+                  setState(() => enterNamesNow = val == 'Now');
+                }),
+              ]),
+            if (trackPlayers && enterNamesNow)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 16),
+                  const Text("Team A Players (one per line)"),
+                  TextField(
+                    controller: teamAPlayersController,
+                    maxLines: 6,
+                    decoration: const InputDecoration(border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text("Team B Players (one per line)"),
+                  TextField(
+                    controller: teamBPlayersController,
+                    maxLines: 6,
+                    decoration: const InputDecoration(border: OutlineInputBorder()),
+                  ),
+                ],
+              ),
+
             const SizedBox(height: 32),
             ElevatedButton(
               onPressed: _startMatch,
@@ -139,6 +177,8 @@ class _MatchSetupScreenState extends State<MatchSetupScreen> {
     final teamB = teamBController.text.trim();
     final overs = int.tryParse(oversController.text.trim()) ?? 0;
     final players = int.tryParse(playersController.text.trim()) ?? 0;
+    final teamAPlayers = teamAPlayersController.text.trim().split('\n').where((p) => p.trim().isNotEmpty).toList();
+    final teamBPlayers = teamBPlayersController.text.trim().split('\n').where((p) => p.trim().isNotEmpty).toList();
 
     if (teamA.isEmpty || teamB.isEmpty || overs < 1 || players < 1) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -156,13 +196,21 @@ class _MatchSetupScreenState extends State<MatchSetupScreen> {
       tossDecision: tossDecision,
       wideGivesRun: wideGivesRun,
       noBallGivesRun: noBallGivesRun,
+      trackPlayers: trackPlayers,
+      enterNamesNow: enterNamesNow,
+      teamAPlayers: teamAPlayers,
+      teamBPlayers: teamBPlayers,
     );
+
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ScoringScreen(matchData: matchData),
+        builder: (_) => matchData.trackPlayers
+            ? ScoringScreenWithPlayers(matchData: matchData)
+            : ScoringScreen(matchData: matchData),
       ),
     );
+
   }
 }
