@@ -57,7 +57,12 @@ class _ScoringScreenState extends State<ScoringScreen>
   }
 
   void addRun(int value) {
-    if (isInningsOver()) return;
+    if (isInningsOver()) {
+      if (widget.isSecondInnings) {
+        endInnings(); // Automatically end innings when target is reached
+      }
+      return;
+    }
     setState(() {
       runs += value;
       balls++;
@@ -66,11 +71,21 @@ class _ScoringScreenState extends State<ScoringScreen>
       overSummary.last.add('$value');
       if (balls % 6 == 0 && !isInningsOver()) overSummary.add([]);
       _playAnimation();
+
+      // Check if target is reached after adding runs
+      if (widget.isSecondInnings && isInningsOver()) {
+        endInnings();
+      }
     });
   }
 
   void addWicket() {
-    if (isInningsOver()) return;
+    if (isInningsOver()) {
+      if (widget.isSecondInnings) {
+        endInnings(); // Automatically end innings when all wickets are lost
+      }
+      return;
+    }
     setState(() {
       wickets++;
       balls++;
@@ -79,11 +94,21 @@ class _ScoringScreenState extends State<ScoringScreen>
       overSummary.last.add('W');
       if (balls % 6 == 0 && !isInningsOver()) overSummary.add([]);
       _playAnimation();
+
+      // Check if all wickets are lost
+      if (widget.isSecondInnings && isInningsOver()) {
+        endInnings();
+      }
     });
   }
 
   void addExtra(String type) {
-    if (isInningsOver()) return;
+    if (isInningsOver()) {
+      if (widget.isSecondInnings) {
+        endInnings(); // Automatically end innings when target is reached
+      }
+      return;
+    }
     int value =
         (type == 'wide' && widget.matchData.wideGivesRun) ||
             (type == 'noball' && widget.matchData.noBallGivesRun)
@@ -95,6 +120,11 @@ class _ScoringScreenState extends State<ScoringScreen>
       redoStack.clear();
       overSummary.last.add(type == 'wide' ? 'WD' : 'NB');
       _playAnimation();
+
+      // Check if target is reached after adding extra
+      if (widget.isSecondInnings && isInningsOver()) {
+        endInnings();
+      }
     });
   }
 
@@ -153,6 +183,11 @@ class _ScoringScreenState extends State<ScoringScreen>
   }
 
   bool isInningsOver() {
+    if (widget.isSecondInnings) {
+      // Check if target is reached
+      int targetScore = (widget.firstInningsScore ?? 0) + 1;
+      if (runs >= targetScore) return true;
+    }
     return balls >= widget.matchData.overs * 6 || wickets >= 10;
   }
 
@@ -274,30 +309,118 @@ class _ScoringScreenState extends State<ScoringScreen>
         },
       );
     } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MatchSummaryScreen(
-            matchData: widget.matchData,
-            teamAScore: widget.firstInningsScore ?? 0,
-            teamAWickets: widget.firstInningsWickets ?? 0,
-            teamAOvers: (widget.firstInningsBalls ?? 0) ~/ 6,
-            teamBScore: runs,
-            teamBWickets: wickets,
-            teamBOvers: balls ~/ 6,
-            topBatsman: "To be added",
-            bestBowler: "To be added",
-          ),
-        ),
+      // Show match result dialog before going to summary
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          String result;
+          if (runs > (widget.firstInningsScore ?? 0)) {
+            result = '${widget.matchData.teamB} won by ${10 - wickets} wickets';
+          } else if (runs < (widget.firstInningsScore ?? 0)) {
+            result =
+                '${widget.matchData.teamA} won by ${(widget.firstInningsScore ?? 0) - runs} runs';
+          } else {
+            result = 'Match tied!';
+          }
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Text(
+              'Match Complete!',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    result,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '${widget.matchData.teamA}: ${widget.firstInningsScore ?? 0}/${widget.firstInningsWickets ?? 0}',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                Text(
+                  '${widget.matchData.teamB}: $runs/$wickets',
+                  style: const TextStyle(fontSize: 16),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MatchSummaryScreen(
+                        matchData: widget.matchData,
+                        teamAScore: widget.firstInningsScore ?? 0,
+                        teamAWickets: widget.firstInningsWickets ?? 0,
+                        teamAOvers: (widget.firstInningsBalls ?? 0) ~/ 6,
+                        teamBScore: runs,
+                        teamBWickets: wickets,
+                        teamBOvers: balls ~/ 6,
+                        topBatsman: "To be added",
+                        bestBowler: "To be added",
+                      ),
+                    ),
+                  );
+                },
+                child: const Text(
+                  'View Match Summary',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          );
+        },
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    String battingTeam = widget.isSecondInnings
-        ? widget.matchData.teamB
-        : widget.matchData.teamA;
+    // Determine batting team based on toss winner and decision
+    String battingTeam;
+    if (!widget.isSecondInnings) {
+      // First innings: If toss winner chose to bat, they bat first
+      if (widget.matchData.tossWinner == widget.matchData.teamA) {
+        battingTeam = widget.matchData.tossDecision == 'Bat'
+            ? widget.matchData.teamA
+            : widget.matchData.teamB;
+      } else {
+        battingTeam = widget.matchData.tossDecision == 'Bat'
+            ? widget.matchData.teamB
+            : widget.matchData.teamA;
+      }
+    } else {
+      // Second innings: The other team bats
+      battingTeam = widget.matchData.tossWinner == widget.matchData.teamA
+          ? (widget.matchData.tossDecision == 'Bat'
+                ? widget.matchData.teamB
+                : widget.matchData.teamA)
+          : (widget.matchData.tossDecision == 'Bat'
+                ? widget.matchData.teamA
+                : widget.matchData.teamB);
+    }
+
     int targetScore = widget.isSecondInnings
         ? (widget.firstInningsScore ?? 0) + 1
         : 0;
@@ -309,14 +432,26 @@ class _ScoringScreenState extends State<ScoringScreen>
       appBar: AppBar(
         backgroundColor: Colors.blue[900],
         elevation: 0,
-        title: Text(
-          "${widget.matchData.teamA} vs ${widget.matchData.teamB}",
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-            letterSpacing: 0.5,
-          ),
+        title: Column(
+          children: [
+            Text(
+              "${widget.matchData.teamA} vs ${widget.matchData.teamB}",
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 18,
+                letterSpacing: 0.5,
+              ),
+            ),
+            Text(
+              "${widget.matchData.overs} Overs Match",
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.8),
+                fontSize: 12,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
@@ -356,6 +491,42 @@ class _ScoringScreenState extends State<ScoringScreen>
             ),
             child: Column(
               children: [
+                if (!widget.isSecondInnings) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.emoji_events,
+                          color: Colors.amber,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${widget.matchData.tossWinner} won toss & chose to ${widget.matchData.tossDecision.toLowerCase()}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20,
@@ -372,14 +543,27 @@ class _ScoringScreenState extends State<ScoringScreen>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        battingTeam,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.2,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            battingTeam,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          if (!widget.isSecondInnings)
+                            Text(
+                              '${widget.isSecondInnings ? "Chasing" : "Batting"} First',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.8),
+                                fontSize: 12,
+                              ),
+                            ),
+                        ],
                       ),
                       ScaleTransition(
                         scale: _scaleAnimation,
@@ -396,120 +580,6 @@ class _ScoringScreenState extends State<ScoringScreen>
                     ],
                   ),
                 ),
-                if (widget.isSecondInnings) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.flag,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Target: $targetScore',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.timer,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '$remainingBalls balls left',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.sports_cricket,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Need ${runsNeeded} runs',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.speed,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'RRR: ${requiredRunRate}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 15),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -520,8 +590,23 @@ class _ScoringScreenState extends State<ScoringScreen>
                       (runs / (balls / 6 + 0.0001)).toStringAsFixed(2),
                       "Run Rate",
                     ),
+                    if (widget.isSecondInnings) ...[
+                      const SizedBox(width: 20),
+                      _buildStatChip(targetScore.toString(), "Target"),
+                    ],
                   ],
                 ),
+                if (widget.isSecondInnings) ...[
+                  const SizedBox(height: 15),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildStatChip(runsNeeded, "Need"),
+                      const SizedBox(width: 20),
+                      _buildStatChip(ballsLeftDisplay, "Balls Left"),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
